@@ -1,0 +1,55 @@
+<html>
+  <head>
+    <script type="text/javascript"
+            src="{{ url_for('static',filename='dygraph-combined.js') }}"></script>
+    <script type="text/javascript"
+src="{{ url_for('static',filename='synchronizer.js') }}"></script>
+    <style>
+    .graph_panel {
+        height: 200px;
+        width: 500px;
+    }
+    </style>
+  </head>
+  <body>
+    Trying out dygraphs.
+    <div id="graph_temp" class="graph_panel">
+      Temp
+    </div>
+    <div id="graph_light" class="graph_panel">
+      Light
+    </div>
+    <div id="graph_pressure" class="graph_panel">
+      Pressure
+    </div>
+
+    <script type="text/javascript">
+      var csv_url="http://127.0.0.1:5000/data/rockridge/get?start=2015-07-20T10:55:00&stop=2017-07-24T10:55:00";
+
+      function handle_draw(dg,is_initial) {
+          console.log('draw');
+          rng=dg.xAxisRange();
+          // This would 
+          // rng[0],rng[1];
+      }
+      var g1 = new Dygraph(document.getElementById("graph_temp"),
+                       csv_url,
+                       {
+                           'visibility':[false,false,false,true,true],
+                           'drawCallback':handle_draw
+                       });
+      var g2 = new Dygraph(document.getElementById("graph_light"),
+                       csv_url,
+                       {
+                           'visibility':[false,true,false,false,false]
+                       });
+      var g3 = new Dygraph(document.getElementById("graph_pressure"),
+                       csv_url,
+                       {
+                           'visibility':[false,false,true,false,false]
+                       });
+      var sync=Dygraph.synchronize(g1,g2,g3, {'range':false});
+    </script>
+    
+  </body>
+</html>
