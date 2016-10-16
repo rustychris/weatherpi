@@ -1,0 +1,94 @@
+<html>
+  <head>
+    <script type="text/javascript"
+            src="{{ url_for('static',filename='dygraph-combined.js') }}"></script>
+    <script type="text/javascript" src="{{ url_for('static',filename='synchronizer.js') }}"></script>
+    <script type="text/javascript" src="{{ url_for('static',filename='interaction-api.js') }}"></script>
+    <style>
+    .graph_panel {
+        height: 200px;
+        width: 500px;
+    }
+    </style>
+  </head>
+  <body>
+    Trying out dygraphs. Starts with last 2 weeks, pannable for other periods.
+    <div id="graph_temp" class="graph_panel">
+      Temp
+    </div>
+    <div id="graph_light" class="graph_panel">
+      Light
+    </div>
+    <div id="graph_pressure" class="graph_panel">
+      Pressure
+    </div>
+     <p> Start time: {{ data_start_time }}
+     <p> Stop time:  {{ data_stop_time }}
+    <script type="text/javascript">
+    // distinguish between the date range of the data, and of the displayed
+    // graph.
+    var data_range_time=[new Date("{{ data_start_time }}"),
+                         new Date("{{ data_stop_time }}")];
+    var data_range_tstamp=[data_range_time[0].getTime(),
+                           data_range_time[1].getTime()];
+    var csv_url="/data/rockridge/get?start="+ data_range_time[0].toISOString() +
+        "&stop=" + data_range_time[1].toISOString();
+    var view_range_tstamp;
+
+    function handle_draw(dg,is_initial) {
+          view_range_tstamp=dg.xAxisRange();
+          // these are javascript timestamps - like unix epoch but
+          // but in milliseconds
+
+        // check the overlap - decide whether to update data.
+        // this is reasonably snappy locally...
+        // need a better binding for zooming out.
+        if ( (data_range_tstamp[0] > view_range_tstamp[0]) ||
+             (data_range_tstamp[1] < view_range_tstamp[1]) ) {
+            var view_range_time=[new Date(),new Date()];
+            view_range_time[0].setTime(view_range_tstamp[0]);
+            view_range_time[1].setTime(view_range_tstamp[1]);
+
+            // request something wider than the current view to offer
+            // some amount of buffer for further zoom/pan.
+            var delta=view_range_tstamp[1] - view_range_tstamp[0];
+            data_range_tstamp=[ view_range_tstamp[0] - 0.5*delta,
+                                view_range_tstamp[1] + 0.5*delta];
+            var start_time=new Date() ; start_time.setTime(data_range_tstamp[0]);
+            var stop_time= new Date() ;  stop_time.setTime(data_range_tstamp[1]);
+            
+            var new_csv_url="/data/rockridge/get?start="+ start_time.toISOString() +
+                "&stop=" + stop_time.toISOString();
+            dg.updateOptions({'file':new_csv_url});
+            console.log('draw: ' + new_csv_url);
+        }
+      }
+      var g1 = new Dygraph(document.getElementById("graph_temp"),
+                       csv_url,
+                       {
+                           'visibility':[false,false,false,true,true],
+                           'drawCallback':handle_draw,
+                           interactionModel : {
+                               'mousedown' : downV3,
+                               'mousemove' : moveV3,
+                               'mouseup' : upV3,
+                               'click' : clickV3,
+                               'dblclick' : dblClickV3,
+                               'mousewheel' : scrollV3
+                           }
+                       });
+      var g2 = new Dygraph(document.getElementById("graph_light"),
+                       csv_url,
+                       {
+                           'visibility':[false,true,false,false,false]
+                       });
+      var g3 = new Dygraph(document.getElementById("graph_pressure"),
+                       csv_url,
+                       {
+                           'visibility':[false,false,true,false,false]
+                       });
+      var sync=Dygraph.synchronize(g1,g2,g3, {'range':false});
+    </script>
+    
+  </body>
+</html>

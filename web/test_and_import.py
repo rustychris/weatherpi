@@ -4,6 +4,7 @@ reload(weather_app2)
 import requests
 import pandas as pd
 import netCDF4
+import utils
 
 from weather_app2 import db, Site, Sensor, Frame, Sample
 
@@ -48,7 +49,8 @@ all_sf.sort_values('timestamp',inplace=True)
 ## 
 site=Site.query.filter_by(name='rockridge').first()
 
-if 0: 
+if 1:
+    # for 25k records, this takes ~60s...
     site.import_dataframe(all_sf.set_index('timestamp'))
     
 ## 
@@ -73,8 +75,8 @@ store=pd.HDFStore(os.path.join(site.data_path(),'weather.h5'))
 raw=store['raw']
 
 # 1ms.
-#result=raw[ (raw.timestamp>=utils.to_unix(query_start)) &
-#            (raw.timestamp<=utils.to_unix(query_end)) ]
+result=raw[ (raw.timestamp>=utils.to_unix(query_start)) &
+                    (raw.timestamp<=utils.to_unix(query_end)) ]
 
 
 ## hourly:
@@ -87,7 +89,6 @@ hourly=raw.groupby(hours).agg( [np.min,np.mean,np.max] )
 new_cols=['_'.join(col) for col in hourly.columns]
 hourly.columns=new_cols
 
-## 
 # can't use a multiindex *and* have searchable data
 hourly.to_hdf(os.path.join(site.data_path(),'weather.h5'),
               'd3600',format='t',data_columns=True)
@@ -96,5 +97,12 @@ hourly.to_hdf(os.path.join(site.data_path(),'weather.h5'),
 # are dense, and we cache some information like the starting, step, stop
 # index.
 
+##
 
+# A bit annoying to carry around the H5 baggage in addition to
+# the sqlite database.
+# how painful would it be to just deal with the database directly,
+# and automatically generate a compiled, semi-denormalized table?
+# and how slow to query a timeseries from it?
 
+# or maybe just add the code to the site object?

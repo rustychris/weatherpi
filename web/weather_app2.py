@@ -9,8 +9,7 @@ import numpy as np
 import utils
 import re
 from flask import (Flask, request, session, g, redirect, url_for, abort, 
-                   render_template, flash )
-
+                   render_template, flash, Response )
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import UniqueConstraint
 
@@ -164,25 +163,22 @@ def clean_stream(stream):
         return stream
     raise BadStream(stream)
     
-    
-
 # data fetching
 @app.route('/data/<stream>/get')
 def fetch(stream):
     default_interval=datetime.timedelta(hours=24)
     
     # build up some default query parameters:
-    start_s = request.args.get('start',None)
-    stop_s = request.args.get('stop',None)
+    def proc_date_arg(key):
+        as_string=request.args.get(key,None)
+        if as_string is not None:
+            if '.' in as_string:
+                as_string = as_string[:as_string.index('.')]
+            return datetime.datetime.strptime(as_string,time_format)
+        return None
 
-    if start_s is not None:
-        start=datetime.datetime.strptime(start_s,time_format)
-    else:
-        start=None
-    if stop_s is not None:
-        stop=datetime.datetime.strptime(stop_s,time_format)
-    else:
-        stop=None
+    start=proc_date_arg('start')
+    stop =proc_date_arg('stop')
 
     if start is not None and stop is not None:
         if start>=stop:
@@ -222,16 +218,36 @@ def fetch(stream):
     if fmt is 'json':
         return result.to_json(index=False,columns=columns)
     elif fmt is 'csv':
-        return result.to_csv(index=False,columns=columns)
+        # The 'T' is required to tell javascript that it's a UTC timestamp, not
+        # local
+        csv_txt=result.to_csv(index=False,columns=columns,date_format="%Y-%m-%dT%H:%M:%S")
+        return Response(csv_txt,content_type='text/plain; charset=utf-8')
 
-                                                                          
 @app.route('/graph')
 def graph1():
     return render_template('dygraph1.html')
 
+@app.route('/graph2')
+def graph2():
+    kwargs=dict(data_start_time = "2016-07-24T00:00:00",
+                data_stop_time  = "2016-07-25T00:00:00")
+    return render_template('dygraph2.html',**kwargs)
+
+
+# timezone troubles:
+#   fetch/get is consistent - asking for data starting at 00:00 returns
+#   data starting at 00:00.  These *should* be dealing with UTC times.
+
+#   Then those timestamps are parsed by dygraphs - and make an assumption that
+#   they are *local* times.  dygraphs will display the "expected" time - except
+#   that it should be a UTC time, and dygraphs presents it as a PDT time.
+#  okay - so formatting dates as "YYYY-MM-DDTHH:MM:SS" triggers UTC, while
+#  having a space triggers local time parsing.  arbiTRARY.
+
+
 # So that's working - pretty snappy.
 # In rough order:
-#    posting of new data, to regerate the h5 raw and overviews
+#    posting of new data, to regenerate the h5 raw and overviews
 #      -- add route to receive data
 #      -- have that add data to sqlite
 #      -- update h5 files.
@@ -246,4 +262,25 @@ def graph1():
 #      -- on zoom, can switch to different level of detail.
 #    deal with timezone display - may not be that hard if we just make sure the
 #    data being sent includes +00:00 at the end
+
+## 
+
+
+if 0:
+    # the url that the raspi uses:
+    private_key="nzombegeDoIgbZdnPGwM"
+    params=dict(private_key=private_key)
+    try:
+        params['humidity']=sensor.humidity
+        params['temp1']=Tconv(sensor.temperature)
+        params['pressure'],temp2=mpl3115.press_temp()
+        params['temp2']=Tconv(temp2)
+        params['lux']=light.light_lux()
+    except Exception as exc:
+        log.error('Failed to read sensor(s)')
+        log.error(str(exc))
+        return
+    url=("http://data.sparkfun.com/input/" + public_key)
+    #try: # not sure what I was trying to do there...
+    resp=requests.get(url,params=params)
 
