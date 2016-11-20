@@ -86,8 +86,17 @@ hours=raw.timestamp//3600
 hourly=raw.groupby(hours).agg( [np.min,np.mean,np.max] )
 
 # drop multiindex by compounding the names
-new_cols=['_'.join(col) for col in hourly.columns]
+new_cols=[]
+for col in hourly.columns:
+    if col[1]=='mean':
+        new_col=col[0]
+    else:
+        new_col='_'.join(col)
+    new_cols.append(new_col)
+    
 hourly.columns=new_cols
+
+
 
 # can't use a multiindex *and* have searchable data
 hourly.to_hdf(os.path.join(site.data_path(),'weather.h5'),

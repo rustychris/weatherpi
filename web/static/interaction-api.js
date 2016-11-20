@@ -89,25 +89,33 @@ function clickV3(event, g, context) {
 }
 
 function scrollV3(event, g, context) {
-  if (lastClickedGraph != g) {
-    return;
-  }
-  var normal = event.detail ? event.detail * -1 : event.wheelDelta / 40;
-  // For me the normalized value shows 0.075 for one click. If I took
-  // that verbatim, it would be a 7.5%.
-  var percentage = normal / 50;
-
-  if (!(event.offsetX && event.offsetY)){
-    event.offsetX = event.layerX - event.target.offsetLeft;
-    event.offsetY = event.layerY - event.target.offsetTop;
-  }
-
-  var percentages = offsetToPercentage(g, event.offsetX, event.offsetY);
-  var xPct = percentages[0];
-  var yPct = percentages[1];
-
-  zoom(g, percentage, xPct, yPct);
-  Dygraph.cancelEvent(event);
+    if (lastClickedGraph != g) {
+        return;
+    }
+    
+    var normal = event.detail ? event.detail * -1 : event.wheelDelta / 40;
+    // For me the normalized value shows 0.075 for one click. If I took
+    // that verbatim, it would be a 7.5%.
+    var percentage = normal / 50;
+    
+    if (!(event.offsetX && event.offsetY)){
+        event.offsetX = event.layerX - event.target.offsetLeft;
+        event.offsetY = event.layerY - event.target.offsetTop;
+    }
+    
+    var percentages = offsetToPercentage(g, event.offsetX, event.offsetY);
+    var xPct = percentages[0];
+    var yPct = percentages[1];
+    
+    if ( xPct > 0 ) {
+        // canvas zooms just horizontal
+        zoomxy(g, percentage, 0, xPct, yPct);
+    } else {
+        // left axis zooms just vertical
+        zoomxy(g, 0, percentage, xPct, yPct);
+    }
+    
+    Dygraph.cancelEvent(event);
 }
 
 // Adjusts [x, y] toward each other by zoomInPercentage%
@@ -132,6 +140,28 @@ function zoom(g, zoomInPercentage, xBias, yBias) {
 
   g.updateOptions({
     dateWindow: adjustAxis(g.xAxisRange(), zoomInPercentage, xBias),
+    valueRange: newYAxes[0]
+    });
+}
+
+// [RH] Like zoom, but allow separate x and y zoom percentages
+function zoomxy(g, xzoomInPercentage, yzoomInPercentage, xBias, yBias) {
+  xBias = xBias || 0.5;
+  yBias = yBias || 0.5;
+  function adjustAxis(axis, zoomInPercentage, bias) {
+    var delta = axis[1] - axis[0];
+    var increment = delta * zoomInPercentage;
+    var foo = [increment * bias, increment * (1-bias)];
+    return [ axis[0] + foo[0], axis[1] - foo[1] ];
+  }
+  var yAxes = g.yAxisRanges();
+  var newYAxes = [];
+  for (var i = 0; i < yAxes.length; i++) {
+    newYAxes[i] = adjustAxis(yAxes[i], yzoomInPercentage, yBias);
+  }
+
+  g.updateOptions({
+    dateWindow: adjustAxis(g.xAxisRange(), xzoomInPercentage, xBias),
     valueRange: newYAxes[0]
     });
 }

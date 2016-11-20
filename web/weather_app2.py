@@ -167,7 +167,11 @@ def clean_stream(stream):
 @app.route('/data/<stream>/get')
 def fetch(stream):
     default_interval=datetime.timedelta(hours=24)
-    
+
+    # which time resolution to return - defaults to
+    # raw
+    res=int(request.args.get('res',"0"))
+
     # build up some default query parameters:
     def proc_date_arg(key):
         as_string=request.args.get(key,None)
@@ -196,32 +200,31 @@ def fetch(stream):
 
     store=pd.HDFStore('volatile/%s/weather.h5'%stream)
 
-    raw=store['raw'] # to be configured...
-    result=raw[ (raw.timestamp>=utils.to_unix(start)) &
-                (raw.timestamp<=utils.to_unix(stop)) ]
+    table_name='d%i'%res
+    if table_name not in store:
+        table_name='raw'
+    table=store[table_name]
+        
+    result=table[ (table.timestamp>=utils.to_unix(start)) &
+                  (table.timestamp<=utils.to_unix(stop)) ]
 
     # easy conversion from unix to np.datetime64?
     t0=np.datetime64('1970-01-01 00:00:00')
    
     result['time']=t0 + result.timestamp.values.astype('i8') * np.timedelta64(1,'s')
-    # to_json() returns something like {"timestamp":{"<i>":12341234,"<i+1>":12341234,...},
-    #                                   "lux":{"<i>":321321,"<i+1>":321322,...} ...
-    #                                  }
-
-    fmt='csv'
 
     columns=(['time'] +
              [c
               for c in result.columns
-              if c not in ['timestamp','time']] )
+              if c not in ['timestamp','timestamp_amin','timestamp_amax',
+                           'time']] )
+    # DBG
+    columns=[c for c in columns if not (c.endswith('_amax') or c.endswith('_amin'))]
     
-    if fmt is 'json':
-        return result.to_json(index=False,columns=columns)
-    elif fmt is 'csv':
-        # The 'T' is required to tell javascript that it's a UTC timestamp, not
-        # local
-        csv_txt=result.to_csv(index=False,columns=columns,date_format="%Y-%m-%dT%H:%M:%S")
-        return Response(csv_txt,content_type='text/plain; charset=utf-8')
+    # The 'T' is required to tell javascript that it's a UTC timestamp, not
+    # local
+    csv_txt=result.to_csv(index=False,columns=columns,date_format="%Y-%m-%dT%H:%M:%S")
+    return Response(csv_txt,content_type='text/plain; charset=utf-8')
 
 @app.route('/graph')
 def graph1():
@@ -233,19 +236,6 @@ def graph2():
                 data_stop_time  = "2016-07-25T00:00:00")
     return render_template('dygraph2.html',**kwargs)
 
-
-# timezone troubles:
-#   fetch/get is consistent - asking for data starting at 00:00 returns
-#   data starting at 00:00.  These *should* be dealing with UTC times.
-
-#   Then those timestamps are parsed by dygraphs - and make an assumption that
-#   they are *local* times.  dygraphs will display the "expected" time - except
-#   that it should be a UTC time, and dygraphs presents it as a PDT time.
-#  okay - so formatting dates as "YYYY-MM-DDTHH:MM:SS" triggers UTC, while
-#  having a space triggers local time parsing.  arbiTRARY.
-
-
-# So that's working - pretty snappy.
 # In rough order:
 #    posting of new data, to regenerate the h5 raw and overviews
 #      -- add route to receive data
@@ -253,15 +243,11 @@ def graph2():
 #      -- update h5 files.
 #      -- allow for pages to poll or somehow get notification (
 #         maybe announce how often to check back?)
-#    on pan, update the data
-#      -- better handled by new csv request, GViz source, custom JS array handling?
-#         => short-term fix - if the overlap with the original date range is smaller
-#            than some threshold, request a new range.
-#    multiple levels of detail
-#      -- display hourly data with the range bars
-#      -- on zoom, can switch to different level of detail.
 #    deal with timezone display - may not be that hard if we just make sure the
-#    data being sent includes +00:00 at the end
+#      data being sent includes +00:00 at the end
+
+
+
 
 ## 
 
