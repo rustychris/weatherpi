@@ -1,8 +1,6 @@
-
 # coding: utf-8
 
-# In[16]:
-
+import os
 import smbus
 from RPiSensors import htu21d
 import requests
@@ -20,8 +18,6 @@ delete_key="3ZlLrdgd1lcVQaW6wY1x"
 bus_num=1 # some boards it's 0.
 
 
-# In[2]:
-
 # Set up logging
 log=logging.getLogger('weather')
 log.setLevel(logging.INFO)
@@ -35,8 +31,6 @@ fh.setFormatter(formatter)
 log.addHandler(fh)
 
 
-# In[4]:
-
 import mpl3115a2
 log.info('Testing MPL3115a2')
 mpl3115=mpl3115a2.Mpl3115A2()
@@ -44,19 +38,11 @@ for i in range(2):
     press,temp=mpl3115.press_temp()
     log.info('Pressure=%.2f temp=%.3f'%(press,temp))
 
-
-# In[5]:
-
 log.info('Initializing HTU21D')
 sensor = htu21d.Htu21d(bus_num,use_temperature=True)
 log.info('Humidity %.3f'%sensor.humidity)
 log.info('Temp %.3f'%sensor.temperature)
 
-
-# In[13]:
-
-import ads1115
-reload(ads1115)
 from ads1115 import ADS1115
 
 class LightSensor(object):
@@ -78,11 +64,23 @@ light=LightSensor()
 log.info('Light level: %.3f'%light.light_lux())
 
 
-# In[19]:
-
 def Tconv(degc):
     return 32.0 + 9./5*degc
 
+def maybe_reboot():
+    hostname="192.168.1.1"
+    response = os.system("ping -c 5 -q " + hostname + " > /dev/null 2>&1")
+    if response==0:
+        log.info("Pinged 192.168.1.1 successfully, not rebooting")
+    else:
+        log.warning("Rebooting")
+        os.system("sync")
+        os.system("sync")
+        os.system("sudo shutdown -r now")
+        log.warning("Reboot should be coming - pausing for 20 seconds.")
+        time.sleep(20)
+        log.warning("This shouldn't be reached!")
+    
 def publish():
     params=dict(private_key=private_key)
     try:
@@ -101,6 +99,7 @@ def publish():
     except Exception as exc:
         log.error('Failed to publish data')
         log.error(str(exc))
+        maybe_reboot()
         return
     log.info('Read/publish successful %.1f %.1f %.0f %.1f %.1f'%(params['humidity'],
                                                                  params['temp1'],
@@ -109,12 +108,8 @@ def publish():
                                                                  params['lux']))
 
 
-# In[20]:
-
 publish()
 
-
-# In[ ]:
 
 while 1:
     try:
