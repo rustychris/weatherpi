@@ -1,5 +1,6 @@
 #  simplify life a bit by having just a single ledger,
 #  hardcoded with the sensors which actually exist
+from __future__ import print_function
 
 import os
 import datetime
@@ -8,10 +9,12 @@ import pandas as pd
 import numpy as np
 import utils
 import re
+import six
 from flask import (Flask, request, session, g, redirect, url_for, abort, 
                    render_template, flash, Response )
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import UniqueConstraint
+import keys
 
 root_dir=os.path.dirname(__file__)
 
@@ -40,7 +43,7 @@ class Site(db.Model):
         for tstamp,rec in df.iterrows():
             reci+=1
             if reci % 500 == 0:
-                print "%d/%d"%(reci,len(df))
+                print("%d/%d"%(reci,len(df)))
                 
             frame=Frame(tstamp,self)
             db.session.add(frame)
@@ -63,6 +66,12 @@ class Site(db.Model):
         # faster than constructing the objects 
         rows=db.session.execute(query).fetchall()
         return rows
+
+    def frame_count(self):
+        query=db.session.query(Frame.id).filter(Frame.site_id==self.id)
+        rows=db.session.execute(query).fetchall()
+        return len(rows)
+    
     def all_samples_dataframe(self):
         rows=self.all_samples()
         df=pd.DataFrame( rows, columns=['value','flag','parameter','timestamp'])
@@ -74,7 +83,10 @@ class Site(db.Model):
         if create and not os.path.exists(path):
             os.makedirs(path)
         return path
-        
+
+    def store(self):
+        return pd.HDFStore(os.path.join( self.data_path(),'weather.h5') )
+    
     def update_h5_raw(self):
         df=self.all_samples_dataframe()
         df=df.reset_index()
@@ -83,7 +95,28 @@ class Site(db.Model):
 
         df.to_hdf(os.path.join(self.data_path(),'weather.h5'),
                   'raw',format='t',data_columns=True)
-        
+
+    def update_h5_agg(self,period_secs):
+        raw=self.store()['raw']
+        periods=raw.timestamp//period_secs
+
+        agg=raw.groupby(periods).agg( [np.min,np.mean,np.max] )
+
+        # drop multiindex by compounding the names
+        new_cols=[]
+        for col in agg.columns:
+            if col[1]=='mean':
+                new_col=col[0]
+            else:
+                new_col='_'.join(col)
+            new_cols.append(new_col)
+
+        agg.columns=new_cols
+
+        # can't use a multiindex *and* have searchable data
+        agg.to_hdf(os.path.join(self.data_path(),'weather.h5'),
+                      'd%d'%period_secs,format='t',data_columns=True)
+
     
 class Frame(db.Model): # when
     id=db.Column(db.Integer, primary_key=True)
@@ -162,10 +195,16 @@ def clean_stream(stream):
     if re.match('^[-_a-zA-Z0-9]+$',stream):
         return stream
     raise BadStream(stream)
-    
+
+def stream_to_site(stream):
+    return Site.query.filter_by(name=stream).first() # i.e. 'rockridge'    
+
 # data fetching
 @app.route('/data/<stream>/get')
 def fetch(stream):
+    stream=clean_stream(stream)
+    site=stream_to_site(stream)
+
     default_interval=datetime.timedelta(hours=24)
 
     # which time resolution to return - defaults to
@@ -196,9 +235,8 @@ def fetch(stream):
     elif stop is None:
         stop=start + default_interval
 
-    stream=clean_stream(stream)
 
-    store=pd.HDFStore('volatile/%s/weather.h5'%stream)
+    store=site.store()
 
     table_name='d%i'%res
     if table_name not in store:
@@ -226,6 +264,56 @@ def fetch(stream):
     csv_txt=result.to_csv(index=False,columns=columns,date_format="%Y-%m-%dT%H:%M:%S")
     return Response(csv_txt,content_type='text/plain; charset=utf-8')
 
+@app.route('/data/<stream>/manual')
+def manual_record(stream):
+    stream=clean_stream(stream)
+    site=stream_to_site(stream)
+
+    Nframes=site.frame_count()
+    store=site.store()
+    Nstored_samples=len(store['raw'])
+
+    return render_template('manual_input.html',
+                           stream=stream,site=site,
+                           Nframes=Nframes,Nstored_samples=Nstored_samples)
+
+@app.route('/data/<stream>/input')
+def record(stream):
+    stream=clean_stream(stream)
+    # record an observation
+    if request.args['private_key'] != keys.private_key:
+        raise Exception("Private key doesn't match")
+
+    # expecting humidity, temp1, pressure, tmpe2, lux
+    # optional timestamp
+
+    site=Site.query.filter_by(name=stream).first() # i.e. 'rockridge'
+
+    if 'timestamp' in request.args:
+        # needs something like
+        # 2015-01-01 12:25:30+00:00
+        tstamp=pd.Timestamp(request.args['timestamp'])
+    else:
+        tstamp=pd.Timestamp.now()
+        
+    df=pd.DataFrame(index=[tstamp]) # initialize with single row
+    for k,v in six.iteritems(request.args):
+        if k!='timestamp':
+            print("Adding to df: %s => %s"%( repr(k), v))
+            df[k]=v
+
+    site.import_dataframe(df)
+
+    print("Saved dataframe: ")
+    print(df)
+
+    site.update_h5_raw()
+    site.update_h5_agg(3600)
+    site.update_h5_agg(86400)
+    print("Updated H5 store")
+    
+    return redirect( url_for('manual_record',stream=stream) )
+
 @app.route('/graph')
 def graph1():
     return render_template('dygraph1.html')
@@ -235,6 +323,8 @@ def graph2():
     kwargs=dict(data_start_time = "2016-07-24T00:00:00",
                 data_stop_time  = "2016-07-25T00:00:00")
     return render_template('dygraph2.html',**kwargs)
+
+
 
 # In rough order:
 #    posting of new data, to regenerate the h5 raw and overviews
@@ -269,4 +359,5 @@ if 0:
     url=("http://data.sparkfun.com/input/" + public_key)
     #try: # not sure what I was trying to do there...
     resp=requests.get(url,params=params)
+
 

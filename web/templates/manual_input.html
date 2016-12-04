@@ -1,0 +1,21 @@
+<html>
+  <div>
+    Currently {{ Nframes }} frames in database<br/>
+    {{ Nstored_samples }} in H5 store.
+  </div>
+
+  <div>
+    <form method="get" action="{{ url_for('record',stream=stream) }}">
+      Timestamp <input type="text" name="timestamp" value="2016-01-02T14:57:30+00:00" /> <br/>
+      Temp1 <input type="text" name="temp1" value="13" /> <br/>
+      Temp2 <input type="text" name="temp2" value="13.2" /> <br/>
+      Pressure <input type="text" name="pressure" value="103.1" /> <br/>
+      Humidity <input type="text" name="humidity" value="86.2" /> <br/>
+      Lux <input type="text" name="lux" value="2700.3" /> <br/>
+      Private key <input type="text" name="private_key" value="nzombegeDoIgbZdnPGwM" /> <br/>
+      <input type="submit" value="Submit">
+    </form>
+  </div>
+  
+</html>
+    
