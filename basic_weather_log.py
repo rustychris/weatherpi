@@ -9,11 +9,15 @@ import time
 import logging.handlers
 
 # settings
-# Publishing to data.sparkfun.com
-public_url="http://data.sparkfun.com/streams/MGvanEzE4vsZRlEj1Ygw"
-public_key="MGvanEzE4vsZRlEj1Ygw"
-private_key="nzombegeDoIgbZdnPGwM"
-delete_key="3ZlLrdgd1lcVQaW6wY1x"
+if 0: # old phant setup
+    # Publishing to data.sparkfun.com
+    public_url="http://data.sparkfun.com/streams/MGvanEzE4vsZRlEj1Ygw"
+    public_key="MGvanEzE4vsZRlEj1Ygw"
+    private_key="nzombegeDoIgbZdnPGwM"
+    delete_key="3ZlLrdgd1lcVQaW6wY1x"
+else:
+    public_url="http://rustyholleman.com/cgi/weather2.fcgi/data/rockridge/input"
+    private_key="nzombegeDoIgbZdnPGwM"
 
 bus_num=1 # some boards it's 0.
 
@@ -93,7 +97,8 @@ def publish():
         log.error('Failed to read sensor(s)')
         log.error(str(exc))
         return
-    url=("http://data.sparkfun.com/input/" + public_key)
+    # url=("http://data.sparkfun.com/input/" + public_key)
+    url=("http://rustyholleman.com/cgi/weather2.fcgi/data/rockridge/input")
     try:
         resp=requests.get(url,params=params)
     except Exception as exc:
