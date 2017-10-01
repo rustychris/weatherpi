@@ -1,5 +1,9 @@
 #  simplify life a bit by having just a single ledger,
 #  hardcoded with the sensors which actually exist
+
+# TODO:
+# Permission management for volatile
+
 from __future__ import print_function
 
 import os
@@ -20,6 +24,7 @@ root_dir=os.path.dirname(__file__)
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(root_dir,'volatile','sensors.db')
+app.config["APPLICATION_ROOT"] = "/weather2"
 db = SQLAlchemy(app)
 
 # 
@@ -79,7 +84,8 @@ class Site(db.Model):
         df=df.pivot('timestamp','parameter','value')
         return df
     def data_path(self,create=True):
-        path=os.path.join( 'volatile',self.name)
+        # added root_dir here.
+        path=os.path.join(root_dir, 'volatile',self.name)
         if create and not os.path.exists(path):
             os.makedirs(path)
         return path

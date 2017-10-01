@@ -1,0 +1,3 @@
+[submodule "web/stompy"]
+	path = web/stompy
+	url = https://github.com/rustychris/stompy.git
