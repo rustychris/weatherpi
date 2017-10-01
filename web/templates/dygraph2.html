@@ -33,7 +33,8 @@ var data_range_time=[new Date("{{ data_start_time }}"),
 var data_range_tstamp=[data_range_time[0].getTime(),
                        data_range_time[1].getTime()];
 var data_res=3600;
-var csv_url="/data/rockridge/get?start="+ data_range_time[0].toISOString() +
+// trying to be ... /data/rockridge/get?start=
+var csv_url="{{ url_for("fetch",stream="rockridge") }}?start="+ data_range_time[0].toISOString() +
     "&stop=" + data_range_time[1].toISOString() + "&res="+data_res;
 var view_range_tstamp;
 
@@ -47,7 +48,7 @@ function update_data(dg,new_range_tstamp,res) {
     var start_time=new Date() ; start_time.setTime(data_range_tstamp[0]);
     var stop_time= new Date() ;  stop_time.setTime(data_range_tstamp[1]);
     
-    var new_csv_url="/data/rockridge/get?start="+ start_time.toISOString() +
+    var new_csv_url="{{ url_for("fetch",stream="rockridge") }}?start="+ start_time.toISOString() +
         "&stop=" + stop_time.toISOString() + "&res=" + res;
     console.log("About to update opts for " + dg);
 
