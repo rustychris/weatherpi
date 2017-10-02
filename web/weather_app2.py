@@ -234,8 +234,8 @@ def fetch(stream):
             stop=None
             
     if start is None and stop is None:
-        start=datetime.datetime.now() - default_interval
-        stop=datetime.datetime.now()
+        stop=datetime.datetime.utcnow()
+        start=stop - default_interval
     elif start is None:
         start=stop - default_interval
     elif stop is None:
@@ -267,7 +267,10 @@ def fetch(stream):
     
     # The 'T' is required to tell javascript that it's a UTC timestamp, not
     # local
-    csv_txt=result.to_csv(index=False,columns=columns,date_format="%Y-%m-%dT%H:%M:%S")
+    # Hmm - this seems to have changed, and now the Z is needed.
+    csv_txt=result.to_csv(index=False,columns=columns,date_format="%Y-%m-%dT%H:%M:%SZ")
+    #csv_txt=csv_txt+"Start: %s  Stop: %s"%(start,stop)
+    #csv_txt=csv_txt+"Now is %s"%datetime.datetime.now()
     return Response(csv_txt,content_type='text/plain; charset=utf-8')
 
 @app.route('/data/<stream>/manual')
@@ -290,7 +293,7 @@ def record(stream):
     if request.args['private_key'] != keys.private_key:
         raise Exception("Private key doesn't match")
 
-    # expecting humidity, temp1, pressure, tmpe2, lux
+    # expecting humidity, temp1, pressure, temp2, lux
     # optional timestamp
 
     site=Site.query.filter_by(name=stream).first() # i.e. 'rockridge'
@@ -300,7 +303,7 @@ def record(stream):
         # 2015-01-01 12:25:30+00:00
         tstamp=pd.Timestamp(request.args['timestamp'])
     else:
-        tstamp=pd.Timestamp.now()
+        tstamp=pd.Timestamp.now(tz='UTC')
         
     df=pd.DataFrame(index=[tstamp]) # initialize with single row
     for k,v in six.iteritems(request.args):
@@ -326,10 +329,16 @@ def graph1():
 
 @app.route('/graph2')
 def graph2():
-    kwargs=dict(data_start_time = "2016-07-24T00:00:00",
-                data_stop_time  = "2016-07-25T00:00:00")
-    return render_template('dygraph2.html',**kwargs)
+    default_interval=datetime.timedelta(hours=24)
 
+    stop=datetime.datetime.utcnow()
+    start=stop - default_interval
+
+    #kwargs=dict(data_start_time = start.strftime(time_format),
+    #            data_stop_time  = stop.strftime(time_format))
+    kwargs=dict(data_start_time=utils.to_unix(start),
+                data_stop_time=utils.to_unix(stop))
+    return render_template('dygraph2.html',**kwargs)
 
 
 # In rough order:

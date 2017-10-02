@@ -6,33 +6,34 @@
     <script type="text/javascript" src="{{ url_for('static',filename='interaction-api.js') }}"></script>
     <style>
     .graph_panel {
-        height: 200px;
-        width: 500px;
+        height: 45%; /* 200px; */
+        width: 90%; /* 500px; */
     }
     </style>
   </head>
   <body>
-    Trying out dygraphs. Starts with last 2 weeks, pannable for other periods.
     <div id="graph_temp" class="graph_panel">
       Temp
     </div>
-    <div id="graph_light" class="graph_panel">
+<!--    <div id="graph_light" class="graph_panel">
       Light
     </div>
     <div id="graph_pressure" class="graph_panel">
       Pressure
     </div>
-     <p> Start time: {{ data_start_time }}
-     <p> Stop time:  {{ data_stop_time }}
+-->
+<!--      <p> Start time: {{ data_start_time }}
+     <p> Stop time:  {{ data_stop_time }} -->
     <script type="text/javascript">
 // distinguish between the date range of the data, and of the displayed
 // graph.
-var data_range_time=[new Date("{{ data_start_time }}"),
-                     new Date("{{ data_stop_time }}")];
+// Parsing dates this way is apparently discouraged due to browser inconsistencies
+var data_range_time=[new Date(1000*{{ data_start_time }}),
+                     new Date(1000*{{ data_stop_time }})];
 
 var data_range_tstamp=[data_range_time[0].getTime(),
                        data_range_time[1].getTime()];
-var data_res=3600;
+var data_res=0;
 // trying to be ... /data/rockridge/get?start=
 var csv_url="{{ url_for("fetch",stream="rockridge") }}?start="+ data_range_time[0].toISOString() +
     "&stop=" + data_range_time[1].toISOString() + "&res="+data_res;
@@ -52,7 +53,7 @@ function update_data(dg,new_range_tstamp,res) {
         "&stop=" + stop_time.toISOString() + "&res=" + res;
     console.log("About to update opts for " + dg);
 
-    var vis=[false,false,false,true,true];
+    var vis=[false,false,false,true,false];
 
     // the max/min code is disabled for now both here and in fetch on the
     // python side.
@@ -74,6 +75,7 @@ function update_data(dg,new_range_tstamp,res) {
 
 function handle_draw(dg,is_initial) {
     if ( is_initial ) {
+        console.log('handle_draw: skipping initial');
         return;
     }
     
@@ -88,10 +90,12 @@ function handle_draw(dg,is_initial) {
     
     // are we still at the right resolution of the data?
     if ( (data_res<3600) && (delta > 86400 * 1000) ) {
+        console.log("Switch to hourly");	 
         update_data(dg,wide_range,3600);
         return;
     }
     if ( (data_res>0) && (delta<86400*1000) ) {
+        console.log("Switch to full res");					   
         update_data(dg,wide_range,0);
         return;
     }
@@ -101,13 +105,14 @@ function handle_draw(dg,is_initial) {
     
     if ( (data_range_tstamp[0] > view_range_tstamp[0]) ||
          (data_range_tstamp[1] < view_range_tstamp[1]) ) {
-        
+        console.log("Update range");        
         // request something wider than the current view to offer
         // some amount of buffer for further zoom/pan.
         update_data(dg,wide_range,data_res);
     }
 }
 
+// this is a bit nicer on laptop, but breaks the phone interaction
 var interactions= {
     'mousedown' : downV3,
     'mousemove' : moveV3,
@@ -117,12 +122,36 @@ var interactions= {
     'mousewheel' : scrollV3
 };
 
+function axis_fmt_date(d,gran) {
+    //console.log("Gran: "+gran);
+    if ( gran < Dygraph.DAILY ) {
+	return d.toLocaleTimeString('en-US',
+				    {'hour':'numeric','minute':'numeric'});
+    } else {
+	return d.toLocaleDateString();
+    }
+
+}
+function value_fmt_date(ms,gran) {
+    let d=new Date(ms);
+    return d.toLocaleString();    
+}
+
 var g1 = new Dygraph(document.getElementById("graph_temp"),
                      csv_url,
-                     {
-                         'visibility':[false,false,false,true,true],
-                         'drawCallback':handle_draw,
-                         interactionModel : interactions
+		     {
+			 axes: {
+			     x: {
+				 axisLabelFormatter:axis_fmt_date,
+				 valueLabelFormatter:value_fmt_date,
+			     }
+			 },
+                         'visibility':[false,false,false,true,false],
+			 'drawCallback':handle_draw,
+			 strokeWidth:3,
+			 labelsUTC: false,
+			 axisLabelFontSize:20,
+ //                       interactionModel : interactions
                      });
 
 if ( 0 ) {
