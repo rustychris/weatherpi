@@ -27,7 +27,8 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(root_dir,'vo
 app.config["APPLICATION_ROOT"] = "/weather2"
 db = SQLAlchemy(app)
 
-# 
+# Try caching this to avoid having so many open HDF stores.
+site_stores={}
 
 class Site(db.Model):
     id=db.Column(db.Integer, primary_key=True)
@@ -91,7 +92,10 @@ class Site(db.Model):
         return path
 
     def store(self):
-        return pd.HDFStore(os.path.join( self.data_path(),'weather.h5') )
+        store_path=os.path.join( self.data_path(),'weather.h5')
+        if store_path not in site_stores:
+            site_stores[store_path]=pd.HDFStore(store_path)
+        return site_stores[store_path]
     
     def update_h5_raw(self):
         df=self.all_samples_dataframe()
@@ -251,7 +255,8 @@ def fetch(stream):
         
     result=table[ (table.timestamp>=utils.to_unix(start)) &
                   (table.timestamp<=utils.to_unix(stop)) ]
-
+    result=result.copy() # avoid pandas warnings
+    
     # easy conversion from unix to np.datetime64?
     t0=np.datetime64('1970-01-01 00:00:00')
    
@@ -329,13 +334,11 @@ def graph1():
 
 @app.route('/graph2')
 def graph2():
-    default_interval=datetime.timedelta(hours=24)
+    default_interval=datetime.timedelta(hours=96)
 
     stop=datetime.datetime.utcnow()
     start=stop - default_interval
 
-    #kwargs=dict(data_start_time = start.strftime(time_format),
-    #            data_stop_time  = stop.strftime(time_format))
     kwargs=dict(data_start_time=utils.to_unix(start),
                 data_stop_time=utils.to_unix(stop))
     return render_template('dygraph2.html',**kwargs)
@@ -353,26 +356,5 @@ def graph2():
 
 
 
-
 ## 
-
-
-if 0:
-    # the url that the raspi uses:
-    private_key="nzombegeDoIgbZdnPGwM"
-    params=dict(private_key=private_key)
-    try:
-        params['humidity']=sensor.humidity
-        params['temp1']=Tconv(sensor.temperature)
-        params['pressure'],temp2=mpl3115.press_temp()
-        params['temp2']=Tconv(temp2)
-        params['lux']=light.light_lux()
-    except Exception as exc:
-        log.error('Failed to read sensor(s)')
-        log.error(str(exc))
-        return
-    url=("http://data.sparkfun.com/input/" + public_key)
-    #try: # not sure what I was trying to do there...
-    resp=requests.get(url,params=params)
-
 

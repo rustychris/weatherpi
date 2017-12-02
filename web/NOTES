@@ -1,0 +1,2 @@
+Seems that it is opening a large number of connections to weather.h5.
+On apache2 restart, it lists closing weather.h5 maybe 20-50 times.
