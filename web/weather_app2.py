@@ -103,11 +103,13 @@ class Site(db.Model):
         t0=pd.Timestamp('1970-01-01 00:00:00') # unix epoch
         df['timestamp']=(df.timestamp-t0)/np.timedelta64(1,'s')
 
-        df.to_hdf(os.path.join(self.data_path(),'weather.h5'),
+        df.to_hdf(self.store(), # os.path.join(self.data_path(),'weather.h5'),
                   'raw',format='t',data_columns=True)
+        
 
     def update_h5_agg(self,period_secs):
-        raw=self.store()['raw']
+        store=self.store()
+        raw=store['raw']
         periods=raw.timestamp//period_secs
 
         agg=raw.groupby(periods).agg( [np.min,np.mean,np.max] )
@@ -124,8 +126,8 @@ class Site(db.Model):
         agg.columns=new_cols
 
         # can't use a multiindex *and* have searchable data
-        agg.to_hdf(os.path.join(self.data_path(),'weather.h5'),
-                      'd%d'%period_secs,format='t',data_columns=True)
+        agg.to_hdf(store, # os.path.join(self.data_path(),'weather.h5'),
+                   'd%d'%period_secs,format='t',data_columns=True)
 
     
 class Frame(db.Model): # when
@@ -278,6 +280,40 @@ def fetch(stream):
     #csv_txt=csv_txt+"Now is %s"%datetime.datetime.now()
     return Response(csv_txt,content_type='text/plain; charset=utf-8')
 
+def last_reading(site):
+    res=0 # raw
+
+    store=site.store()
+
+    table_name='d%i'%res
+    if table_name not in store:
+        table_name='raw'
+    table=store[table_name]
+        
+    result=table.iloc[ -1: ] # assume last is the most recent
+    result=result.copy() # avoid pandas warnings
+    
+    # easy conversion from unix to np.datetime64?
+    t0=np.datetime64('1970-01-01 00:00:00')
+   
+    result['time']=t0 + result.timestamp.values.astype('i8') * np.timedelta64(1,'s')
+
+    # The 'T' is required to tell javascript that it's a UTC timestamp, not
+    # local
+    # Hmm - this seems to have changed, and now the Z is needed.
+    json_txt=result.iloc[0].to_json()
+    return json_txt
+
+@app.route('/data/<stream>/last')
+def fetch_last(stream):
+    stream=clean_stream(stream)
+    site=stream_to_site(stream)
+
+    json_txt=last_reading(site)
+    
+    return Response(json_txt,content_type='text/plain; charset=utf-8')
+
+
 @app.route('/data/<stream>/manual')
 def manual_record(stream):
     stream=clean_stream(stream)
@@ -324,6 +360,7 @@ def record(stream):
     site.update_h5_raw()
     site.update_h5_agg(3600)
     site.update_h5_agg(86400)
+    site.store().flush(True)
     print("Updated H5 store")
     
     return redirect( url_for('manual_record',stream=stream) )
@@ -341,6 +378,10 @@ def graph2():
 
     kwargs=dict(data_start_time=utils.to_unix(start),
                 data_stop_time=utils.to_unix(stop))
+
+    stream='rockridge'
+    site=stream_to_site(stream)
+    kwargs['last_json']=last_reading(site)
     return render_template('dygraph2.html',**kwargs)
 
 

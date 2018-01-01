@@ -1,5 +1,8 @@
 <html>
   <head>
+    <script type="text/javascript">
+      last_json={{ last_json|safe }};
+    </script>
     <script type="text/javascript"
             src="{{ url_for('static',filename='dygraph-combined.js') }}"></script>
     <script type="text/javascript" src="{{ url_for('static',filename='synchronizer.js') }}"></script>
@@ -9,9 +12,25 @@
         height: 45%; /* 200px; */
         width: 90%; /* 500px; */
     }
+    div#temp_line {
+    font-size: x-large;
+    font-family: sans-serif;
+    }
+    div#last_datetime {
+    font-size: large;
+    font-family: sans-serif;
+    }
     </style>
   </head>
   <body>
+    <div id="last_reading">
+      <div id="temp_line">Temp: <span id="last_temp1"></span>&#176;F</div>
+      <div id="last_datetime">
+	<span id="last_date"></span>
+	<span id="last_time"></span>
+	(<span id="last_age"></span>)
+      </div>
+    </div>
     <div id="graph_temp" class="graph_panel">
       Temp
     </div>
@@ -23,7 +42,17 @@
     </div>
 -->
 <!--      <p> Start time: {{ data_start_time }}
-     <p> Stop time:  {{ data_stop_time }} -->
+	  <p> Stop time:  {{ data_stop_time }} -->
+<script type="text/javascript">
+  var last_date=new Date(1000*last_json["timestamp"]);
+
+  document.getElementById("last_date").textContent=last_date.toDateString();
+  document.getElementById("last_time").textContent=last_date.toTimeString();
+  document.getElementById("last_temp1").textContent=last_json["temp1"].toFixed(1);
+  var age=(Date.now() - last_date)/1000/60;
+  document.getElementById("last_age").textContent=age.toFixed() +" minutes ago";
+</script>
+
     <script type="text/javascript">
 // distinguish between the date range of the data, and of the displayed
 // graph.
@@ -42,6 +71,7 @@ var view_range_tstamp;
 console.log("CSV URL: " + csv_url);
 
 function update_data(dg,new_range_tstamp,res) {
+    console.log("update_data");
     // record the change before waiting for it to actually happen:
     data_range_tstamp=new_range_tstamp;
     data_res=res;
