@@ -19,20 +19,71 @@ from flask import (Flask, request, session, g, redirect, url_for, abort,
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import UniqueConstraint
 import keys
+time_format='%Y-%m-%dT%H:%M:%S'
 
-root_dir=os.path.dirname(__file__)
+try:
+    root_dir=os.path.dirname(__file__)
+    app = Flask(__name__)
+except NameError: # during dev:
+    root_dir="."
+    app = Flask("weather_app2")
 
-app = Flask(__name__)
+volatile=os.path.join(root_dir,'volatile')
+    
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(root_dir,'volatile','sensors.db')
 app.config["APPLICATION_ROOT"] = "/weather2"
 db = SQLAlchemy(app)
 
-# Try caching this to avoid having so many open HDF stores.
-site_stores={}
+
+# post-process a dataframe result to a desired resolution in time
+def downsample(raw,period_secs):
+    """
+    raw: pandas DataFrame, with a datetime64 time column
+    """
+    timestamp=utils.to_unix(raw.time.values)
+    periods=timestamp//period_secs
+    
+    #agg=raw.groupby(periods).agg( [np.min,np.mean,np.max] )
+    agg=raw.groupby(periods).agg( [np.mean] )
+
+    # drop multiindex by compounding the names
+    new_cols=[]
+    for col in agg.columns:
+        if col[1]=='mean':
+            new_col=col[0]
+        else:
+            new_col='_'.join(col)
+        new_cols.append(new_col)
+
+    agg.columns=new_cols
+
+    unix_time=agg.index.values*period_secs
+
+    agg['time']=np.datetime64("1970-01-01 00:00")+np.timedelta64(1,'s')*unix_time
+
+    # reorder to get time first
+    new_cols=['time'] + list(agg.columns[:-1])
+    agg=agg[new_cols]
+    return agg
 
 class Site(db.Model):
     id=db.Column(db.Integer, primary_key=True)
     name=db.Column(db.String(50))
+    
+    class BadStream(Exception):
+        pass
+
+    @staticmethod
+    def by_name(name):
+        name=Site.sanitize_name(name)
+        return Site.query.filter_by(name=name).first() 
+
+    @staticmethod
+    def sanitize_name(name):
+        if re.match('^[-_a-zA-Z0-9]+$',name):
+            return name
+        else:
+            raise BadStream(stream)
 
     def __init__(self,name):
         self.name=name
@@ -62,6 +113,7 @@ class Site(db.Model):
 
         db.session.commit()        
     def all_samples(self):
+        # about 2 seconds
         query=db.session.query(Sample.value,Sample.flag,
                                Sensor.name,
                                Frame.timestamp).\
@@ -73,7 +125,60 @@ class Site(db.Model):
         rows=db.session.execute(query).fetchall()
         return rows
 
+    def fetch_date_range(self,start,stop,res=0):
+        query=db.session.query(Sample.value,Sample.flag,
+                               Sensor.name,
+                               Frame.timestamp).\
+                               filter(Sample.frame_id==Frame.id).\
+                               filter(Sample.sensor_id==Sensor.id).\
+                               filter(Frame.site_id == site.id).\
+                               filter(Frame.timestamp>=start).\
+                               filter(Frame.timestamp<=stop)
+
+        # faster than constructing the objects 
+        rows=db.session.execute(query).fetchall()
+        
+        # Each row is value, flag, name, timestamp
+        df=pd.DataFrame.from_records(data=rows,columns=['value','flag','sensor','time'])
+        df2=df.pivot(index='time',columns='sensor',values='value').reset_index()
+
+        if res>0:
+            df2=downsample(df2,res)
+
+        # This is the expected format -- dataframe with a timestamp and each sensor
+        # value on each row
+        return df2
+    
+    def last_reading(self):
+        res=0 # DBG -- only know how to do raw right now
+
+        # Get the last frame:
+        query=db.session.query(Frame.id).\
+                               filter(Frame.site_id == site.id).\
+                               order_by(Frame.timestamp.desc())
+        res=db.session.execute(query).first()
+        frame_id=res[0]
+        
+        query=db.session.query(Sample.value,Sample.flag,
+                               Sensor.name,
+                               Frame.timestamp).\
+                               filter(Sample.frame_id==Frame.id).\
+                               filter(Sample.sensor_id==Sensor.id).\
+                               filter(Frame.id == frame_id)
+
+        # faster than constructing the objects
+        rows=db.session.execute(query).fetchall()
+        
+        # Each row is value, flag, name, timestamp
+        df=pd.DataFrame.from_records(data=rows,columns=['value','flag','sensor','timestamp'])
+        df2=df.pivot(index='timestamp',columns='sensor',values='value').reset_index()
+
+        # This is the expected format -- dataframe with a timestamp and each sensor
+        # value on each row
+        return df2
+        
     def frame_count(self):
+        # 0.5s
         query=db.session.query(Frame.id).filter(Frame.site_id==self.id)
         rows=db.session.execute(query).fetchall()
         return len(rows)
@@ -86,48 +191,43 @@ class Site(db.Model):
         return df
     def data_path(self,create=True):
         # added root_dir here.
-        path=os.path.join(root_dir, 'volatile',self.name)
+        path=os.path.join(volatile,self.name)
         if create and not os.path.exists(path):
             os.makedirs(path)
         return path
 
-    def store(self):
-        store_path=os.path.join( self.data_path(),'weather.h5')
-        if store_path not in site_stores:
-            site_stores[store_path]=pd.HDFStore(store_path)
-        return site_stores[store_path]
-    
-    def update_h5_raw(self):
-        df=self.all_samples_dataframe()
-        df=df.reset_index()
-        t0=pd.Timestamp('1970-01-01 00:00:00') # unix epoch
-        df['timestamp']=(df.timestamp-t0)/np.timedelta64(1,'s')
+    # def update_h5_raw(self):
+    #     df=self.all_samples_dataframe()
+    #     df=df.reset_index()
+    #     t0=pd.Timestamp('1970-01-01 00:00:00') # unix epoch
+    #     df['timestamp']=(df.timestamp-t0)/np.timedelta64(1,'s')
+    # 
+    #     df.to_hdf(self.store(), # os.path.join(self.data_path(),'weather.h5'),
+    #               'raw',format='t',data_columns=True)
 
-        df.to_hdf(self.store(), # os.path.join(self.data_path(),'weather.h5'),
-                  'raw',format='t',data_columns=True)
-        
-
-    def update_h5_agg(self,period_secs):
-        store=self.store()
-        raw=store['raw']
-        periods=raw.timestamp//period_secs
-
-        agg=raw.groupby(periods).agg( [np.min,np.mean,np.max] )
-
-        # drop multiindex by compounding the names
-        new_cols=[]
-        for col in agg.columns:
-            if col[1]=='mean':
-                new_col=col[0]
-            else:
-                new_col='_'.join(col)
-            new_cols.append(new_col)
-
-        agg.columns=new_cols
-
-        # can't use a multiindex *and* have searchable data
-        agg.to_hdf(store, # os.path.join(self.data_path(),'weather.h5'),
-                   'd%d'%period_secs,format='t',data_columns=True)
+    # def update_agg(self,period_secs):
+    #     #store=self.store()
+    #     #raw=store['raw']
+    #     df=self.all_samples_dataframe()
+    #     
+    #     periods=raw.timestamp//period_secs
+    # 
+    #     agg=raw.groupby(periods).agg( [np.min,np.mean,np.max] )
+    # 
+    #     # drop multiindex by compounding the names
+    #     new_cols=[]
+    #     for col in agg.columns:
+    #         if col[1]=='mean':
+    #             new_col=col[0]
+    #         else:
+    #             new_col='_'.join(col)
+    #         new_cols.append(new_col)
+    # 
+    #     agg.columns=new_cols
+    # 
+    #     # can't use a multiindex *and* have searchable data
+    #     agg.to_hdf(store, # os.path.join(self.data_path(),'weather.h5'),
+    #                'd%d'%period_secs,format='t',data_columns=True)
 
     
 class Frame(db.Model): # when
@@ -177,45 +277,32 @@ class Sample(db.Model):
     def __repr__(self):
         return '<Sample %r:%g>' % (self.sensor,self.value)
 
+# Some approaches to optimize access
+#sql="""CREATE INDEX IF NOT EXISTS frame_time_idx ON frame (timestamp)"""
+#res=conn.execute(sql)
+#sql="""create index sample_frame_idx on sample (frame_id)"""
+#sql="""analyze"""
 
-    
-class WeatherPi(db.Model):
-    timestamp=db.Column(db.DateTime,primary_key=True)
-    humidity= db.Column(db.Float)
-    lux=db.Column(db.Float)
-    temp1=db.Column(db.Float)
-    temp2=db.Column(db.Float)
-    pressure=db.Column(db.Float)
+##
 
-    def __init__(self,timestamp,**kws):
-        self.timestamp=timestamp
-        self.__dict__.update(kws)
-    def __repr__(self):
-        return '<WeatherPi %s>'%(self.timestamp)
+site=Site.by_name('rockridge')
 
+#rows=site.fetch_date_range(datetime.datetime(2018,1,10),
+#                           datetime.datetime(2018,1,11),
+#                           0)
+# rows=site.last_reading()
+
+
+## 
 
 @app.route('/')
 def landing():
     return render_template('landing.html')
 
-time_format='%Y-%m-%dT%H:%M:%S'
-volatile=os.path.join(os.path.dirname(__file__),
-                      'volatile')
-class BadStream(Exception):
-    pass
-def clean_stream(stream):
-    if re.match('^[-_a-zA-Z0-9]+$',stream):
-        return stream
-    raise BadStream(stream)
-
-def stream_to_site(stream):
-    return Site.query.filter_by(name=stream).first() # i.e. 'rockridge'    
-
 # data fetching
-@app.route('/data/<stream>/get')
-def fetch(stream):
-    stream=clean_stream(stream)
-    site=stream_to_site(stream)
+@app.route('/data/<site_name>/get')
+def fetch(site_name):
+    site=Site.by_name(site_name)
 
     default_interval=datetime.timedelta(hours=24)
 
@@ -227,7 +314,7 @@ def fetch(stream):
     def proc_date_arg(key):
         as_string=request.args.get(key,None)
         if as_string is not None:
-            if '.' in as_string:
+            if '.' in as_string: # discard decimal seconds
                 as_string = as_string[:as_string.index('.')]
             return datetime.datetime.strptime(as_string,time_format)
         return None
@@ -240,84 +327,32 @@ def fetch(stream):
             stop=None
             
     if start is None and stop is None:
-        stop=datetime.datetime.utcnow()
+        #stop=datetime.datetime.utcnow()
+        stop=site.last_reading().timestamp[0].to_pydatetime()
         start=stop - default_interval
     elif start is None:
         start=stop - default_interval
     elif stop is None:
         stop=start + default_interval
 
-
-    store=site.store()
-
-    table_name='d%i'%res
-    if table_name not in store:
-        table_name='raw'
-    table=store[table_name]
-        
-    result=table[ (table.timestamp>=utils.to_unix(start)) &
-                  (table.timestamp<=utils.to_unix(stop)) ]
-    result=result.copy() # avoid pandas warnings
+    result=site.fetch_date_range(start,stop,res)
     
-    # easy conversion from unix to np.datetime64?
-    t0=np.datetime64('1970-01-01 00:00:00')
-   
-    result['time']=t0 + result.timestamp.values.astype('i8') * np.timedelta64(1,'s')
+    csv_txt=result.to_csv(index=False,date_format="%Y-%m-%dT%H:%M:%SZ")
 
-    columns=(['time'] +
-             [c
-              for c in result.columns
-              if c not in ['timestamp','timestamp_amin','timestamp_amax',
-                           'time']] )
-    # DBG
-    columns=[c for c in columns if not (c.endswith('_amax') or c.endswith('_amin'))]
-    
-    # The 'T' is required to tell javascript that it's a UTC timestamp, not
-    # local
-    # Hmm - this seems to have changed, and now the Z is needed.
-    csv_txt=result.to_csv(index=False,columns=columns,date_format="%Y-%m-%dT%H:%M:%SZ")
-    #csv_txt=csv_txt+"Start: %s  Stop: %s"%(start,stop)
-    #csv_txt=csv_txt+"Now is %s"%datetime.datetime.now()
     return Response(csv_txt,content_type='text/plain; charset=utf-8')
 
-def last_reading(site):
-    res=0 # raw
-
-    store=site.store()
-
-    table_name='d%i'%res
-    if table_name not in store:
-        table_name='raw'
-    table=store[table_name]
-        
-    result=table.iloc[ -1: ] # assume last is the most recent
-    result=result.copy() # avoid pandas warnings
-    
-    # easy conversion from unix to np.datetime64?
-    t0=np.datetime64('1970-01-01 00:00:00')
-   
-    result['time']=t0 + result.timestamp.values.astype('i8') * np.timedelta64(1,'s')
-
-    # The 'T' is required to tell javascript that it's a UTC timestamp, not
-    # local
-    # Hmm - this seems to have changed, and now the Z is needed.
+@app.route('/data/<site_name>/last')
+def fetch_last(site_name):
+    site=Site.by_name(site_name)
+    result=site.last_reading()
     json_txt=result.iloc[0].to_json()
-    return json_txt
 
-@app.route('/data/<stream>/last')
-def fetch_last(stream):
-    stream=clean_stream(stream)
-    site=stream_to_site(stream)
-
-    json_txt=last_reading(site)
-    
     return Response(json_txt,content_type='text/plain; charset=utf-8')
 
 
-@app.route('/data/<stream>/manual')
-def manual_record(stream):
-    stream=clean_stream(stream)
-    site=stream_to_site(stream)
+@app.route('/data/<site_name>/manual')
+def manual_record(site_name):
+    site=Site.by_name(site_name)
 
     Nframes=site.frame_count()
     store=site.store()
@@ -327,9 +362,8 @@ def manual_record(stream):
                            stream=stream,site=site,
                            Nframes=Nframes,Nstored_samples=Nstored_samples)
 
-@app.route('/data/<stream>/input')
-def record(stream):
-    stream=clean_stream(stream)
+@app.route('/data/<site_name>/input')
+def record(site_name):
     # record an observation
     if request.args['private_key'] != keys.private_key:
         raise Exception("Private key doesn't match")
@@ -337,7 +371,7 @@ def record(stream):
     # expecting humidity, temp1, pressure, temp2, lux
     # optional timestamp
 
-    site=Site.query.filter_by(name=stream).first() # i.e. 'rockridge'
+    site=Site.by_name(site_name)
 
     if 'timestamp' in request.args:
         # needs something like
@@ -357,45 +391,34 @@ def record(stream):
     print("Saved dataframe: ")
     print(df)
 
-    site.update_h5_raw()
-    site.update_h5_agg(3600)
-    site.update_h5_agg(86400)
-    site.store().flush(True)
-    print("Updated H5 store")
+    #site.update_h5_raw()
+    #site.update_h5_agg(3600)
+    #site.update_h5_agg(86400)
+    #site.store().flush(True)
+    #print("Updated H5 store")
     
     return redirect( url_for('manual_record',stream=stream) )
 
-@app.route('/graph')
-def graph1():
-    return render_template('dygraph1.html')
+#@app.route('/graph')
+#def graph1():
+#    return render_template('dygraph1.html')
 
 @app.route('/graph2')
 def graph2():
     default_interval=datetime.timedelta(hours=96)
+    site_name='rockridge'
+    site=Site.by_name(site_name)
+    last=site.last_reading()
 
-    stop=datetime.datetime.utcnow()
+    # stop=datetime.datetime.utcnow()
+    stop=last.timestamp[0].to_pydatetime()
     start=stop - default_interval
 
     kwargs=dict(data_start_time=utils.to_unix(start),
                 data_stop_time=utils.to_unix(stop))
 
-    stream='rockridge'
-    site=stream_to_site(stream)
-    kwargs['last_json']=last_reading(site)
+    kwargs['last_json']=last.iloc[0].to_json()
+    
     return render_template('dygraph2.html',**kwargs)
 
-
-# In rough order:
-#    posting of new data, to regenerate the h5 raw and overviews
-#      -- add route to receive data
-#      -- have that add data to sqlite
-#      -- update h5 files.
-#      -- allow for pages to poll or somehow get notification (
-#         maybe announce how often to check back?)
-#    deal with timezone display - may not be that hard if we just make sure the
-#      data being sent includes +00:00 at the end
-
-
-
-## 
 
