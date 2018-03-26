@@ -1,11 +1,10 @@
 <html>
   <div>
     Currently {{ Nframes }} frames in database<br/>
-    {{ Nstored_samples }} in H5 store.
   </div>
 
   <div>
-    <form method="get" action="{{ url_for('record',stream=stream) }}">
+    <form method="get" action="{{ url_for('record',site_name=site.name) }}">
       Timestamp <input type="text" name="timestamp" value="2016-01-02T14:57:30+00:00" /> <br/>
       Temp1 <input type="text" name="temp1" value="13" /> <br/>
       Temp2 <input type="text" name="temp2" value="13.2" /> <br/>

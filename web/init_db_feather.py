@@ -1,10 +1,7 @@
 import weather_app2
-reload(weather_app2)
 
-import requests
 import pandas as pd
 import netCDF4
-import utils
 
 from weather_app2 import db, Site, Sensor, Frame, Sample
 

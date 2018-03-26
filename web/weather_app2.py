@@ -320,12 +320,10 @@ def manual_record(site_name):
     site=Site.by_name(site_name)
 
     Nframes=site.frame_count()
-    store=site.store()
-    Nstored_samples=len(store['raw'])
 
     return render_template('manual_input.html',
-                           stream=stream,site=site,
-                           Nframes=Nframes,Nstored_samples=Nstored_samples)
+                           site=site,
+                           Nframes=Nframes)
 
 @app.route('/data/<site_name>/input')
 def record(site_name):
@@ -355,14 +353,8 @@ def record(site_name):
 
     print("Saved dataframe: ")
     print(df)
-
-    #site.update_h5_raw()
-    #site.update_h5_agg(3600)
-    #site.update_h5_agg(86400)
-    #site.store().flush(True)
-    #print("Updated H5 store")
     
-    return redirect( url_for('manual_record',stream=stream) )
+    return redirect( url_for('manual_record',site_name=site_name) )
 
 @app.route('/graph2')
 def graph2():
