@@ -131,7 +131,7 @@ class Site(db.Model):
                                Frame.timestamp).\
                                filter(Sample.frame_id==Frame.id).\
                                filter(Sample.sensor_id==Sensor.id).\
-                               filter(Frame.site_id == site.id).\
+                               filter(Frame.site_id == self.id).\
                                filter(Frame.timestamp>=start).\
                                filter(Frame.timestamp<=stop)
 
@@ -154,9 +154,12 @@ class Site(db.Model):
 
         # Get the last frame:
         query=db.session.query(Frame.id).\
-                               filter(Frame.site_id == site.id).\
+                               filter(Frame.site_id == self.id).\
                                order_by(Frame.timestamp.desc())
         res=db.session.execute(query).first()
+        if res is None:
+            return None
+        
         frame_id=res[0]
         
         query=db.session.query(Sample.value,Sample.flag,
@@ -195,40 +198,6 @@ class Site(db.Model):
         if create and not os.path.exists(path):
             os.makedirs(path)
         return path
-
-    # def update_h5_raw(self):
-    #     df=self.all_samples_dataframe()
-    #     df=df.reset_index()
-    #     t0=pd.Timestamp('1970-01-01 00:00:00') # unix epoch
-    #     df['timestamp']=(df.timestamp-t0)/np.timedelta64(1,'s')
-    # 
-    #     df.to_hdf(self.store(), # os.path.join(self.data_path(),'weather.h5'),
-    #               'raw',format='t',data_columns=True)
-
-    # def update_agg(self,period_secs):
-    #     #store=self.store()
-    #     #raw=store['raw']
-    #     df=self.all_samples_dataframe()
-    #     
-    #     periods=raw.timestamp//period_secs
-    # 
-    #     agg=raw.groupby(periods).agg( [np.min,np.mean,np.max] )
-    # 
-    #     # drop multiindex by compounding the names
-    #     new_cols=[]
-    #     for col in agg.columns:
-    #         if col[1]=='mean':
-    #             new_col=col[0]
-    #         else:
-    #             new_col='_'.join(col)
-    #         new_cols.append(new_col)
-    # 
-    #     agg.columns=new_cols
-    # 
-    #     # can't use a multiindex *and* have searchable data
-    #     agg.to_hdf(store, # os.path.join(self.data_path(),'weather.h5'),
-    #                'd%d'%period_secs,format='t',data_columns=True)
-
     
 class Frame(db.Model): # when
     id=db.Column(db.Integer, primary_key=True)
@@ -285,13 +254,7 @@ class Sample(db.Model):
 
 ##
 
-site=Site.by_name('rockridge')
-
-#rows=site.fetch_date_range(datetime.datetime(2018,1,10),
-#                           datetime.datetime(2018,1,11),
-#                           0)
-# rows=site.last_reading()
-
+# site=Site.by_name('rockridge')
 
 ## 
 
@@ -327,7 +290,9 @@ def fetch(site_name):
             stop=None
             
     if start is None and stop is None:
-        #stop=datetime.datetime.utcnow()
+        last_reading = site.last_reading()
+        if last_reading is None:
+            return Response("No data",content_type="text/plain; charset=utf-8")
         stop=site.last_reading().timestamp[0].to_pydatetime()
         start=stop - default_interval
     elif start is None:
@@ -398,10 +363,6 @@ def record(site_name):
     #print("Updated H5 store")
     
     return redirect( url_for('manual_record',stream=stream) )
-
-#@app.route('/graph')
-#def graph1():
-#    return render_template('dygraph1.html')
 
 @app.route('/graph2')
 def graph2():
