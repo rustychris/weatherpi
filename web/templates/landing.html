@@ -14,13 +14,17 @@
   <li> <a href="{{ url_for('graph2') }}">test graph 2 - time subset</a>
 
   <h1>Rockridge Feather Weather</h2>
-  <li> <a href="/data/rock_feather/get"> data/rock_feather/get </a>
-  <li> <a href="/data/rock_feather/manual"> data/rock_feather/manual </a>
-  <li> <a href="/data/rock_feather/get?start=2016-07-23T10:55:00&stop=2016-07-24T10:55:00">
+  <li> <a href="{{ url_for('fetch',site_name='rock_feather') }}"> data/rock_feather/get </a>
+  <li> <a href="{{ url_for('graph',site_name='rock_feather') }}"> graph </a>
+  <li> <a href="{{ url_for('manual_record',site_name='rock_feather') }}"> data/rock_feather/manual </a>
+  <li> <a href="{{ url_for('fetch',site_name='rock_feather',
+                           start='2016-07-23T10:55:00',stop='2016-07-24T10:55:00') }}">
     data/rock_feather/get recent
     </a>
     
-  <li> <a href="/data/rock_feather/get?start=2016-07-23T00:00:00&stop=2016-07-24T00:00:00&res=3600">
+  <li> <a href="{{ url_for('fetch',site_name='rock_feather',
+                           start='2016-07-23T10:55:00',stop='2016-07-24T10:55:00',
+                           res='3600') }}">
     data/rock_feather/get recent, hourly
   </a>
 

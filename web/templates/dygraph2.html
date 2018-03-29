@@ -12,7 +12,7 @@
         height: 45%; /* 200px; */
         width: 90%; /* 500px; */
     }
-    div#temp_line {
+    div#data_line {
     font-size: x-large;
     font-family: sans-serif;
     }
@@ -20,35 +20,41 @@
     font-size: large;
     font-family: sans-serif;
     }
+
+    .dygraph-label, .dygraph-axis-label.dygraph-axis-label-x {
+    font-family: sans-serif;
+    }
+    
     </style>
   </head>
   <body>
     <div id="last_reading">
-      <div id="temp_line">Temp: <span id="last_temp1"></span>&#176;F</div>
+      <div id="data_line">{{field}}: <span id="last_data"></span> {{unit|safe}}</div>
       <div id="last_datetime">
 	<span id="last_date"></span>
 	<span id="last_time"></span>
 	(<span id="last_age"></span>)
       </div>
     </div>
-    <div id="graph_temp" class="graph_panel">
-      Temp
+    <div id="graph1" class="graph_panel">
+      {{ field }}
     </div>
-<!--    <div id="graph_light" class="graph_panel">
-      Light
-    </div>
-    <div id="graph_pressure" class="graph_panel">
-      Pressure
-    </div>
--->
+
+<div id="field_links">
+  {% for column in columns %}
+    <li><a href="{{ url_for('graph',site_name=site_name,field=column)}}">{{ column }}</a>
+  {% endfor %}
+</div>
 <!--      <p> Start time: {{ data_start_time }}
 	  <p> Stop time:  {{ data_stop_time }} -->
 <script type="text/javascript">
+  var field="{{field}}";
+
   var last_date=new Date(last_json["timestamp"]);
 
   document.getElementById("last_date").textContent=last_date.toDateString();
   document.getElementById("last_time").textContent=last_date.toTimeString();
-  document.getElementById("last_temp1").textContent=last_json["temp1"].toFixed(1);
+  document.getElementById("last_data").textContent=last_json[field].toFixed(1);
   var age=(Date.now() - last_date)/1000/60;
   document.getElementById("last_age").textContent=age.toFixed() +" minutes ago";
 </script>
@@ -64,7 +70,7 @@ var data_range_tstamp=[data_range_time[0].getTime(),
                        data_range_time[1].getTime()];
 var data_res=0;
 // trying to be ... /data/rockridge/get?start=
-var csv_url="{{ url_for("fetch",site_name="rockridge") }}?start="+ data_range_time[0].toISOString() +
+var csv_url="{{ url_for("fetch",site_name=site_name) }}?param="+field+"&start="+ data_range_time[0].toISOString() +
     "&stop=" + data_range_time[1].toISOString() + "&res="+data_res;
 var view_range_tstamp;
 
@@ -79,23 +85,13 @@ function update_data(dg,new_range_tstamp,res) {
     var start_time=new Date() ; start_time.setTime(data_range_tstamp[0]);
     var stop_time= new Date() ;  stop_time.setTime(data_range_tstamp[1]);
     
-    var new_csv_url="{{ url_for("fetch",site_name="rockridge") }}?start="+ start_time.toISOString() +
-        "&stop=" + stop_time.toISOString() + "&res=" + res;
+    var new_csv_url="{{ url_for('fetch',site_name=site_name) }}?param="+field+"&start="+
+           start_time.toISOString() +
+           "&stop=" + stop_time.toISOString() + "&res=" + res;
     console.log("About to update opts for " + dg);
 
-    var vis=[false,false,false,true,false];
+    var vis=[true];
 
-    // the max/min code is disabled for now both here and in fetch on the
-    // python side.
-    
-    // if( res>0 ) {
-    //     vis=[false,false,false,
-    //          false,false,false,
-    //          false,false,false,
-    //          false,true,false,
-    //          false,false,false];
-    // }
-    
     dg.updateOptions({'file':new_csv_url,
                       'visibility':vis});
     console.log('draw: ' + new_csv_url);
@@ -167,38 +163,35 @@ function value_fmt_date(ms,gran) {
     return d.toLocaleString();    
 }
 
-var g1 = new Dygraph(document.getElementById("graph_temp"),
+console.log('About to create dygraph');
+                
+var g1 = new Dygraph(document.getElementById("graph1"),
                      csv_url,
 		     {
 			 axes: {
 			     x: {
 				 axisLabelFormatter:axis_fmt_date,
-				 valueLabelFormatter:value_fmt_date,
-			     }
+                                 valueLabelFormatter:value_fmt_date,
+                                 gridLineWidth:1.0,
+                                 axisLabelWidth:80,
+                                 pixelsPerLabel:120
+			     }, 
+                             y: {
+                                 gridLineWidth:1.0
+                             }
 			 },
-                         'visibility':[false,false,false,true,false],
+                         'visibility':[true],
 			 'drawCallback':handle_draw,
 			 strokeWidth:3,
 			 labelsUTC: false,
-			 axisLabelFontSize:20,
-  //                       interactionModel : interactions
+			 axisLabelFontSize:26,
+                       interactionModel : interactions
                      });
 
-if ( 0 ) {
-    var g2 = new Dygraph(document.getElementById("graph_light"),
-                         csv_url,
-                         {
-                             'visibility':[false,true,false,false,false]
-                         });
-    var g3 = new Dygraph(document.getElementById("graph_pressure"),
-                         csv_url,
-                         {
-                             'visibility':[false,false,true,false,false]
-                         });
-    var sync=Dygraph.synchronize(g1,g2,g3, {'range':false});
-}
 
 </script>
+
+
     
 </body>
 </html>

@@ -272,6 +272,7 @@ def fetch(site_name):
     # which time resolution to return - defaults to
     # raw
     res=int(request.args.get('res',"0"))
+    param=request.args.get('param',None)
 
     # build up some default query parameters:
     def proc_date_arg(key):
@@ -301,6 +302,9 @@ def fetch(site_name):
         stop=start + default_interval
 
     result=site.fetch_date_range(start,stop,res)
+
+    if param is not None:
+        result=result.loc[:,['time',param]]
     
     csv_txt=result.to_csv(index=False,date_format="%Y-%m-%dT%H:%M:%SZ")
 
@@ -371,7 +375,40 @@ def graph2():
                 data_stop_time=utils.to_unix(stop))
 
     kwargs['last_json']=last.iloc[0].to_json()
-    
+    kwargs['site_name']=site_name
+    return render_template('dygraph2.html',**kwargs)
+
+
+@app.route('/graph/<site_name>/<field>')
+def graph(site_name,field):
+    default_interval=datetime.timedelta(hours=96)
+    site=Site.by_name(site_name)
+    last=site.last_reading()
+
+    # stop=datetime.datetime.utcnow()
+    stop=last.timestamp[0].to_pydatetime()
+    start=stop - default_interval
+
+    kwargs=dict(data_start_time=utils.to_unix(start),
+                data_stop_time=utils.to_unix(stop))
+
+    kwargs['last_json']=last.iloc[0].to_json()
+    kwargs['site_name']=site_name
+    kwargs['field']=field
+    # really ought to get this from the database
+    if field.startswith('temp1'):
+        unit='&#176;F'
+    elif field.startswith('press'):
+        unit='Pa'
+    elif field.startswith('pm'):
+        unit='&mu;g/m<sup>3</sup>'
+    else:
+        unit="n/a"
+        
+    kwargs['unit']=unit
+
+    kwargs['columns']=[ col for col in last.columns if col!='timestamp']
+
     return render_template('dygraph2.html',**kwargs)
 
 
