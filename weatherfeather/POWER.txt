@@ -1,0 +1,28 @@
+Modules:
+  PMS5003 particulate sensor:
+   power 5V, logic is 3.3V
+   serial (at least TX pin from particle sensor to rx on feather)
+   active current <= 100mA
+   connect to USB, which provides the 5V power.  this also means that
+   it can't run off battery power, only USB.
+   
+
+  bme280 pressure
+   i2c or spi
+   power with 3.3V
+   current during all measurements below 1mA.
+
+  light sensor: 0.4mA while sensing
+   i2c:
+   power with 3.3V to match logic
+
+
+So the PMS5003 gets 5V power, and draws up to 100mA
+everybody else gets 3.3V power, with negligible draw.
+
+The feather itself, with wifi on, can draw up to 140mA,
+commonly 100mA.
+
+
+
+
