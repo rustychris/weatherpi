@@ -63,6 +63,10 @@ void publish_push(void) {
     // if you couldn't make a connection:
     Serial.println("connection failed");
   }
+  // 2018-10-05: try client.stop() regardless, maybe keep things in a better state.
+  Serial.println("calling client.stop()");
+  client.stop();
+  Serial.println("done calling client.stop()");
 }
 
 

@@ -58,12 +58,14 @@ void setup() {
 #define CONNECT_RETRIES 10
 
 bool ensure_connection() {
-  // // for debugging -- disconnect every time
-  // Serial.println("Trying power cycle to wifi");
-  // WiFi.end();
-  // Serial.println(" -- sleep 20 seconds");
-  // delay(20*1000);
-  // Serial.println(" -- now connect");
+  // for debugging -- disconnect every time
+  // with the feather m0 with ufl connector, and now compiling on my linux laptop,
+  // i now *have* to do this, or it will fail after 2-3 requests.
+  Serial.println("Trying power cycle to wifi");
+  WiFi.end();
+  Serial.println(" -- sleep 10 seconds");
+  delay(10*1000);
+  Serial.println(" -- now connect");
   
   status = WiFi.status();
   
@@ -103,6 +105,7 @@ bool ensure_connection() {
 
 void loop() {
   int delay_ms=300*1000;
+  //int delay_ms=10*1000; // testing
 
   // check the network connection once every 10 seconds:
   publish_init();
